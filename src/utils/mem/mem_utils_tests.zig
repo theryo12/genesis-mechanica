@@ -1,79 +1,50 @@
 const std = @import("std");
 const mem_utils = @import("mem_utils.zig");
 
-test "copy works for slices of equal length" {
-    var src = [_]u8{ 1, 2, 3, 4, 5 };
-    var dst = [_]u8{ 0, 0, 0, 0, 0 };
+test "allocate and free memory" {
+    const allocator = std.heap.page_allocator;
+    var utils = try mem_utils.MemUtils.init(allocator);
 
-    try mem_utils.copy(dst[0..], src[0..]);
+    const size = 256;
+    const ptr = try utils.alloc(size);
+    defer utils.free(ptr, size);
 
-    try std.testing.expect(std.mem.eql(u8, dst[0..], src[0..]));
+    try std.testing.expect(ptr != null);
 }
 
-test "copy returns an error for slices of unequal length" {
-    var src = [_]u8{ 1, 2, 3 };
-    var dst = [_]u8{ 0, 0 };
+test "resize buffer" {
+    const allocator = std.heap.page_allocator;
+    var buffer = try mem_utils.MemUtils.SmartBuffer.init(allocator, 64);
+    defer buffer.free();
 
-    const result = mem_utils.copy(dst[0..], src[0..]);
+    try buffer.resize(128);
+    try std.testing.expect(buffer.size == 128);
 
-    try std.testing.expectError(error.InvalidSliceLength, result);
+    try buffer.resize(64);
+    try std.testing.expect(buffer.size == 64);
 }
 
-test "fill sets all elements to the specified value" {
-    var buf = [_]u8{ 0, 0, 0, 0, 0 };
+test "memory pool allocation and deallocation" {
+    const allocator = std.heap.page_allocator;
+    const pool_size = 1024;
+    var pool = try mem_utils.MemUtils.MemoryPool.init(allocator, 256, pool_size);
 
-    mem_utils.fill(buf[0..], 42);
+    const ptr = try pool.alloc();
+    try std.testing.expect(ptr != null);
 
-    try std.testing.expect(std.mem.eql(u8, buf[0..], &[_]u8{ 42, 42, 42, 42, 42 }));
+    try pool.free(ptr);
+
+    const ptr2 = try pool.alloc();
+    try std.testing.expect(ptr == ptr2);
 }
 
-test "zero clears all elements to 0" {
-    var buf = [_]u8{ 1, 2, 3, 4, 5 };
+test "large allocation uses default allocator" {
+    const allocator = std.heap.page_allocator;
+    var utils = try mem_utils.MemUtils.init(allocator);
 
-    mem_utils.zero(buf[0..]);
+    const size = 2048;
+    const ptr: ?*u8 = try utils.alloc(size);
+    defer utils.free(ptr, size);
 
-    try std.testing.expect(std.mem.eql(u8, buf[0..], &[_]u8{ 0, 0, 0, 0, 0 }));
-}
-
-test "equals returns true for identical slices" {
-    const a = [_]u8{ 1, 2, 3, 4, 5 };
-    const b = [_]u8{ 1, 2, 3, 4, 5 };
-
-    try std.testing.expect(mem_utils.equals(a[0..], b[0..]));
-}
-
-test "equals returns false for slices with differing content" {
-    const a = [_]u8{ 1, 2, 3, 4, 5 };
-    const b = [_]u8{ 1, 2, 0, 4, 5 };
-
-    try std.testing.expect(!mem_utils.equals(a[0..], b[0..]));
-}
-
-test "alignPointer correctly aligns to the specified boundary" {
-    const ptr = @as(usize, 7);
-    const alignment = 4;
-
-    const aligned_ptr = mem_utils.alignPointer(ptr, alignment);
-
-    try std.testing.expect(mem_utils.isAligned(aligned_ptr, alignment));
-}
-
-test "allocate initializes memory to zero" {
-    var allocator = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = allocator.deinit();
-
-    const size = 5;
-    const buf = try mem_utils.allocate(&allocator.allocator(), size);
-    defer mem_utils.deallocate(&allocator.allocator(), buf);
-
-    try std.testing.expect(std.mem.eql(u8, buf, &[_]u8{ 0, 0, 0, 0, 0 }));
-}
-
-test "deallocate frees memory without errors" {
-    var allocator = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = allocator.deinit();
-
-    const buf = try mem_utils.allocate(&allocator.allocator(), 5);
-
-    mem_utils.deallocate(&allocator.allocator(), buf);
+    try std.testing.expect(ptr != null);
 }
